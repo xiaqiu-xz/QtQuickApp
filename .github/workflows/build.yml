@@ -1,0 +1,35 @@
+name: CI
+
+on: push
+
+jobs:
+  build_and_test:
+    name: "Build and Test Qt App (CMake)"
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt update
+          sudo apt install -y qt6-base-dev ninja-build cmake
+
+      - name: Install Ninja (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install ninja
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+
+      - name: Configure Build
+        run: cmake -S . -B build -G "Ninja Multi-Config"
+
+      - name: Build
+        run: cmake --build build --config Debug
