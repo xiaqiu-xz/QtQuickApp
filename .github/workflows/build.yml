@@ -1,6 +1,8 @@
 name: CI
 
-on: push # 触发条件：每次代码推送时
+on:
+  push: # 触发条件：每次代码推送时
+  pull_request: # 也在PR时触发
 
 jobs:
   build_and_test:
@@ -8,14 +10,18 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest] # 在GitHub提供的Windows和Linux镜像上构建
+      fail-fast: false  # 一个平台失败不影响其他平台
     runs-on: ${{ matrix.os }} # 使用矩阵中的操作系统值
+    timeout-minutes: 60  # 设置整个job的超时时间
 
     steps:
     - uses: actions/checkout@v4    # 实际检出源代码。GH Actions可以为不需要源码的事件运行
                                    # （例如有人在issue上评论时）
 
     - name: Install dependencies (linux)
-      run: sudo apt update && sudo apt install ninja-build cmake qt6-base-dev qt6-declarative-dev
+      run: |
+        sudo apt update
+        sudo apt install -y ninja-build cmake qt6-base-dev qt6-declarative-dev qt6-quick-dev qt6-qml-dev
       if: matrix.os == 'ubuntu-latest' # 条件执行：仅在Ubuntu runner上运行此步骤
 
     - name: Setup MSVC (windows)
@@ -30,15 +36,25 @@ jobs:
     - name: Install Qt
       uses: jurplel/install-qt-action@v4  # 使用最新版本
       with:
-        version: '6.8.3'  # 匹配您使用的Qt版本
+        version: '6.5.2'  # 使用稳定版本
         arch: ${{ matrix.os == 'ubuntu-latest' && 'gcc_64' || 'win64_msvc2022_64' }}
         cache: true  # 启用缓存以加速构建
+        modules: 'qtquick qtdeclarative'  # 只安装必要的模块
+        install-deps: 'true'  # 自动安装依赖
+        setup-python: 'false'  # 跳过Python设置以节省时间
+      if: matrix.os == 'windows-latest'  # 只在Windows上使用action安装Qt
+      timeout-minutes: 15  # 设置Qt安装超时
 
     # 这里我们手动调用CMake，市场上也有相关的解决方案：https://github.com/marketplace/actions/run-cmake
     - name: Configure Build
       # 我们不需要为CMake设置环境变量来找到Qt，因为install-qt-action
       # 会自动设置必要的变量
-      run: cmake -S . -B build -G "Ninja Multi-Config"
+      run: |
+        echo "Qt installation path:"
+        echo "QT_ROOT_DIR=$QT_ROOT_DIR"
+        echo "Qt5_DIR=$Qt5_DIR"
+        echo "Qt6_DIR=$Qt6_DIR"
+        cmake -S . -B build -G "Ninja Multi-Config"
 
     - name: Build
       run: cmake --build build --config Debug
