@@ -1,35 +1,48 @@
 name: CI
 
-on: push
+on: push # 触发条件：每次代码推送时
 
 jobs:
   build_and_test:
-    name: "Build and Test Qt App (CMake)"
+    name: "Build and test"
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+        os: [ubuntu-latest, windows-latest] # 在GitHub提供的Windows和Linux镜像上构建
+    runs-on: ${{ matrix.os }} # 使用矩阵中的操作系统值
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4    # 实际检出源代码。GH Actions可以为不需要源码的事件运行
+                                   # （例如有人在issue上评论时）
 
-      - name: Install dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt update
-          sudo apt install -y qt6-base-dev ninja-build cmake
+    - name: Install dependencies (linux)
+      run: sudo apt update && sudo apt install ninja-build cmake qt6-base-dev qt6-declarative-dev
+      if: matrix.os == 'ubuntu-latest' # 条件执行：仅在Ubuntu runner上运行此步骤
 
-      - name: Install Ninja (Windows)
-        if: matrix.os == 'windows-latest'
-        run: choco install ninja
+    - name: Setup MSVC (windows)
+      uses: ilammy/msvc-dev-cmd@v1 # 这个action本质上为x64调用runner中最新VS的vcvarsall.bat
+      if: matrix.os == 'windows-latest'
 
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.8.3'
+    - name: Install Ninja (windows)    # Ninja在GitHub提供的镜像中不可用，
+                                       # 参见 https://github.com/actions/runner-images/issues/514
+      run: choco install ninja         # 所以通过Chocolatey安装它
+      if: matrix.os == 'windows-latest'
 
-      - name: Configure Build
-        run: cmake -S . -B build -G "Ninja Multi-Config"
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4  # 使用最新版本
+      with:
+        version: '6.8.3'  # 匹配您使用的Qt版本
+        arch: ${{ matrix.os == 'ubuntu-latest' && 'gcc_64' || 'win64_msvc2022_64' }}
+        cache: true  # 启用缓存以加速构建
 
-      - name: Build
-        run: cmake --build build --config Debug
+    # 这里我们手动调用CMake，市场上也有相关的解决方案：https://github.com/marketplace/actions/run-cmake
+    - name: Configure Build
+      # 我们不需要为CMake设置环境变量来找到Qt，因为install-qt-action
+      # 会自动设置必要的变量
+      run: cmake -S . -B build -G "Ninja Multi-Config"
+
+    - name: Build
+      run: cmake --build build --config Debug
+
+    - name: Test (optional)
+      run: cmake --build build --target test --config Debug
+      continue-on-error: true  # 如果没有测试，不会导致构建失败
